@@ -1,0 +1,8 @@
+numpy
+pandas
+six
+torch
+torchvission
+tqdm
+opencv-python
+tensorboard
