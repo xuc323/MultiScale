@@ -29,5 +29,3 @@ class Averagvalue(object):
         self.count += n
         self.avg = self.sum / self.count
 
-
-

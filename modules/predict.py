@@ -95,4 +95,3 @@ def predict(model_type, restore_path, save_dir, test_loader , output_ext, input_
         torchvision.utils.save_image(torch.squeeze(merge), join(save_dir, dirs[-2], f'{filename}.{output_ext}'))
         torchvision.transforms.transforms.ToPILImage(torch.squeeze(results[i]))
     print('')
-

@@ -20,4 +20,3 @@ def cross_entropy_loss(prediction, label):
 
         print('label size: ', label.size())
         print('predict size: ', prediction.size())
-
