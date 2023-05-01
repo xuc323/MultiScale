@@ -42,7 +42,7 @@ def predict(model_type, restore_path, save_dir, test_loader , output_ext, input_
         checkpoint=torch.load(restore_path)
     else:
         checkpoint = torch.load(restore_path, map_location=torch.device('cpu'))
-    model.load_state_dict(checkpoint['state_dict'])
+    model.load_state_dict(checkpoint['state_dict'], strict=False)
     print("=> loaded checkpoint")
     
 
