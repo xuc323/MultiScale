@@ -19,15 +19,15 @@ from modules.transforms import Fliplr, Rescale_byrate
 #from modules.options import arg_parser
 
 
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader, ConcatDataset, DistributedSampler
 from datetime import datetime
-from torch import save, cuda, device
+from torch import save, cuda, device, distributed
 
 import logging
 
 
 
-root=Path("/work2/09397/xuc323/frontera/SR_Dataset_v1/train_data")
+root=Path("/work2/09395/mzm223/frontera/dataset/train_data")
 
 tag = datetime.now().strftime("%y%m%d-%H%M%S")
 
@@ -52,8 +52,9 @@ params={
      'pretrained_path': None,
      'resume_path': None,
      'weights_init_on': False,
-     'multi_gpu': True,
-     'device' : device("cuda:0" if cuda.is_available() else "cpu"),
+     'multi_gpu': False,
+     'local_rank': int(os.environ['LOCAL_RANK']),
+     'device' : device("cuda" if cuda.is_available() else "cpu"),
      }
 
 args= struct(**params)
@@ -64,6 +65,17 @@ args= struct(**params)
 
 #%%
 def main():
+    if cuda.is_available():
+        if distributed.get_world_size() > 1:
+            args.multi_gpu = True
+        print(args.multi_gpu)
+        distributed.init_process_group(backend='nccl', init_method='env://')
+    else:
+        distributed.init_process_group(backend='gloo', init_method='env://')
+        if distributed.get_world_size() > 1:
+            if distributed.get_rank() == 0:
+                print("Cannot run multiple processes without GPUS.")
+            exit()
     
     ## logger
     #LOG_FORMAT="%(Levelname)s %(asctime)s - %(message)s"
@@ -84,6 +96,17 @@ def main():
     if (args.tmp_dir is not None) and (not isdir(args.tmp_dir)):
         os.makedirs(args.tmp_dir)
 
+    #distributed setup
+
+    for r in range(distributed.get_world_size()):
+        if r == distributed.get_rank():
+            print(
+                f'Global rank {distributed.get_rank()} initialized: '
+                f'local_rank = {args.local_rank}, '
+                f'world_size = {distributed.get_world_size()}',
+            )
+        distributed.barrier()
+
     # define network
     net=Network(args, model=msNet())
 
@@ -97,9 +120,11 @@ def main():
     ]
     #train_dataset=SnowData(root=root,lst=args.trainlist)
     train_dataset=ConcatDataset(ds)
-    train_loader= DataLoader(train_dataset, num_workers=8, batch_size=1, shuffle=True)
-    
-    
+    if args.multi_gpu:
+        train_sampler = DistributedSampler(train_dataset, num_replicas=distributed.get_world_size(), rank=distributed.get_rank())
+        train_loader = DataLoader(train_dataset, num_workers=8, batch_size=4, sampler=train_sampler) #shuffle=True,
+    else:
+        train_loader = DataLoader(train_dataset, num_workers=8, batch_size=4, shuffle=True) 
     
     if args.logger is not None:
         dt=datetime.now()-t0
@@ -116,6 +141,7 @@ def main():
     # switch to train mode: not needed!  model.train()
     t1=datetime.now()
     for epoch in range(args.start_epoch, args.max_epoch):
+        # print('epoch', epoch)
         ## initial log (optional:sample36)
         if (epoch == 0) and (args.tmp_dir is not None) and (args.devlist is not None):
             print("Performing initial testing...")
@@ -135,15 +161,28 @@ def main():
     dt=datetime.now()-t1
     args.logger.info(f"Total training time : {dt.total_seconds()} seconds")
     
-    final=join('..',tag)
-    if not isdir(final):
-        os.makedirs(final)   
-    t0=datetime.now()       
-    save(trainer.final_state, join(final,f'final_{args.max_epoch}.pth'))
-    
-    dt=datetime.now()-t0
-    args.logger.info(f"Time to save final state : {dt.total_seconds()} seconds")
-    
-        
+    if args.multi_gpu:
+        distributed.barrier()
+        if distributed.get_rank() == 0:
+            final=join('..',tag)
+            if not isdir(final):
+                os.makedirs(final)       
+
+            t0=datetime.now()   
+            save(trainer.final_state, join(final,f'final_{args.max_epoch}.pth'))
+            dt=datetime.now()-t0
+            args.logger.info(f"Time to save final state : {dt.total_seconds()} seconds")
+
+            distributed.destroy_process_group()
+    else:
+        final=join('..',tag)
+        if not isdir(final):
+            os.makedirs(final)       
+
+        t0=datetime.now()   
+        save(trainer.final_state, join(final,f'final_{args.max_epoch}.pth'))
+        dt=datetime.now()-t0
+        args.logger.info(f"Time to save final state : {dt.total_seconds()} seconds")
+
 if __name__ == '__main__':
     main()

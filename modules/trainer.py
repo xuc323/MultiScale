@@ -32,10 +32,15 @@ class Network(object):
         super(Network, self).__init__()
         # a necessary class for initialization and pretraining, there are precision issues when import model directly
 
-        model.to(args.device)
-        
         if args.multi_gpu:
-            self.model = nn.DataParallel(model)
+            torch.cuda.set_device(args.local_rank)
+
+            model.to(args.device)
+        
+            # self.model = nn.DataParallel(model)
+
+            torch.cuda.set_device(args.local_rank)
+            self.model = nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank])
         else:
             self.model = model
             
@@ -120,15 +125,13 @@ class Trainer(object):
 
 
         counter = 0
-        with tqdm(total=self.n_train, desc=f'Epoch {epoch + 1}/{self.max_epoch}', unit='img') as pbar:
-            for batch in self.train_loader:
+        with tqdm(total=self.n_train, desc=f'Epoch {epoch + 1}/{self.max_epoch}', unit='img', disable=torch.distributed.get_rank()!=0) as pbar:
+            for batch in self.train_loader: 
 
                 data, label, image_name= batch['data'], batch['label'], batch['id'][0]
-                
-                
 
-                if torch.cuda.is_available():
-                    for key in data:
+                if self.use_cuda:
+                    for key in data: 
                         data[key]=data[key].cuda()
                     label=label.cuda()
                     
@@ -137,7 +140,6 @@ class Trainer(object):
                 ## forward
                 outputs = self.model(data)
                 ## loss
-
 
                 if self.use_cuda:
                     loss = torch.zeros(1).cuda()
@@ -158,7 +160,7 @@ class Trainer(object):
                     self.optimizer.step()
                     self.optimizer.zero_grad()
                     counter = 0
-                    #adjust learnig rate
+                    #adjust learning rate
                     self.scheduler.step()
                     self.global_step += 1
 
