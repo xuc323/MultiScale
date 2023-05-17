@@ -34,7 +34,6 @@ class SnowData(D.Dataset):
 
         # get image (jpg)
         img_abspath = join(self.root, self.df['data'][index])
-        print(img_abspath)
         assert os.path.isfile(
             img_abspath), "file  {}. doesn't exist.".format(img_abspath)
 

@@ -66,10 +66,8 @@ args= struct(**params)
 #%%
 def main():
     if cuda.is_available():
-        if distributed.get_world_size() > 1:
-            args.multi_gpu = True
-        print(args.multi_gpu)
         distributed.init_process_group(backend='nccl', init_method='env://')
+        args.multi_gpu = True
     else:
         distributed.init_process_group(backend='gloo', init_method='env://')
         if distributed.get_world_size() > 1:
@@ -120,11 +118,9 @@ def main():
     ]
     #train_dataset=SnowData(root=root,lst=args.trainlist)
     train_dataset=ConcatDataset(ds)
-    if args.multi_gpu:
-        train_sampler = DistributedSampler(train_dataset, num_replicas=distributed.get_world_size(), rank=distributed.get_rank())
-        train_loader = DataLoader(train_dataset, num_workers=8, batch_size=4, sampler=train_sampler) #shuffle=True,
-    else:
-        train_loader = DataLoader(train_dataset, num_workers=8, batch_size=4, shuffle=True) 
+    train_sampler = DistributedSampler(train_dataset, num_replicas=distributed.get_world_size(), rank=distributed.get_rank())
+    train_loader = DataLoader(train_dataset, num_workers=8, batch_size=1, sampler=train_sampler) #shuffle=True,
+        # train_loader = DataLoader(train_dataset, num_workers=8, batch_size=1, shuffle=True) 
     
     if args.logger is not None:
         dt=datetime.now()-t0
